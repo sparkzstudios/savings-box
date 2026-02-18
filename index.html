@@ -668,25 +668,59 @@ function sortGoals(goals, sortBy){
   });
 }
 
-function randomBoxes(count,target){
-  const usable=DENOMS.filter(d=>d<=target);
-  if(!usable.length) usable.push(1);
-  let remaining=target;
-  const boxes=[];
-  for(let i=0;i<count-1;i++){
-    const slotsLeft=count-i;
-    const maxForThis=remaining-(slotsLeft-1);
-    if(maxForThis<=0){boxes.push(1);remaining-=1;continue;}
-    const valid=usable.filter(d=>d<=maxForThis);
-    if(!valid.length){boxes.push(1);remaining-=1;continue;}
-    const pick=valid[Math.floor(Math.random()*valid.length)];
-    boxes.push(pick);remaining-=pick;
+function randomBoxes(count, target) {
+  // Build list of usable denominations
+  const usable = DENOMS.filter(d => d <= target);
+  if (!usable.length) return Array(count).fill(1);
+
+  const boxes = [];
+  let remaining = target;
+
+  for (let i = 0; i < count - 1; i++) {
+    const slotsLeft = count - i;
+
+    // Hard cap: leave at least 1 rupee for every remaining slot
+    const maxForThis = remaining - (slotsLeft - 1);
+    if (maxForThis <= 0) { boxes.push(1); remaining -= 1; continue; }
+
+    const valid = usable.filter(d => d <= maxForThis);
+    if (!valid.length) { boxes.push(1); remaining -= 1; continue; }
+
+    // ── DYNAMIC WEIGHTED PICK ──────────────────────────────────
+    // Re-calculate ideal average each step so distribution self-corrects
+    // and never drifts toward tiny values near the end.
+    const idealAvg = remaining / slotsLeft;
+
+    // Log-normal bell curve: denominations near idealAvg get highest weight.
+    // sigma=1.8 gives a wide enough spread so neighbouring denoms appear too.
+    const SIGMA = 1.8;
+    const ws = valid.map(d => {
+      const logR = Math.log(d / idealAvg);
+      return Math.exp(-(logR * logR) / (2 * SIGMA * SIGMA));
+    });
+
+    // Weighted random draw
+    const total = ws.reduce((a, b) => a + b, 0);
+    let rnd = Math.random() * total;
+    let pick = valid[valid.length - 1];
+    for (let j = 0; j < valid.length; j++) {
+      rnd -= ws[j];
+      if (rnd <= 0) { pick = valid[j]; break; }
+    }
+
+    boxes.push(pick);
+    remaining -= pick;
   }
+
+  // Last slot gets exactly whatever is left (guarantees sum === target)
   boxes.push(remaining);
-  for(let i=boxes.length-1;i>0;i--){
-    const j=Math.floor(Math.random()*(i+1));
-    [boxes[i],boxes[j]]=[boxes[j],boxes[i]];
+
+  // Fisher-Yates shuffle so no positional pattern
+  for (let i = boxes.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [boxes[i], boxes[j]] = [boxes[j], boxes[i]];
   }
+
   return boxes;
 }
 
